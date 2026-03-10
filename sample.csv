@@ -1,0 +1,6 @@
+date,city,pincode,orders,revenue,status
+2025-01-01,Delhi,110045,120,45000,Delivered
+2025-01-02,Mumbai,400081,90,35000,Failed
+2025-01-03,Delhi,110045,140,52000,Delivered
+2025-01-04,Bangalore,560034,80,30000,Failed
+2025-01-05,Mumbai,400081,110,42000,Delivered

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+token.txt
+gh.zip
+gh.msi
+gh-cli/
+.DS_Store
+
