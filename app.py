@@ -26,37 +26,6 @@ st.markdown("""
         min-height: 100vh;
     }
     
-    /* Chat Container */
-    .chat-container {
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-    }
-    
-    /* Message Bubbles - User */
-    .user-message {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 16px 20px;
-        border-radius: 20px 20px 5px 20px;
-        margin: 10px 0;
-        max-width: 70%;
-        margin-left: auto;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-    
-    /* Message Bubbles - Bot */
-    .bot-message {
-        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
-        color: #e0e0e0;
-        padding: 16px 20px;
-        border-radius: 20px 20px 20px 5px;
-        margin: 10px 0;
-        max-width: 70%;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
     /* Title Styling */
     .main-title {
         background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 50%, #667eea 100%);
@@ -121,7 +90,7 @@ st.markdown("""
         border-radius: 16px;
         padding: 24px;
         border: 1px solid rgba(102, 126, 234, 0.3);
-        margin: 10px 0;
+        margin: 20px 0;
     }
     
     /* Code Display */
@@ -187,18 +156,6 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    /* Data Preview Header */
-    .data-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        background: rgba(30, 30, 46, 0.9);
-        padding: 15px 20px;
-        border-radius: 12px 12px 0 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-bottom: none;
-    }
-    
     /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
@@ -212,15 +169,6 @@ st.markdown("""
     
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    /* Dataframe Container */
-    .dataframe-container {
-        background: rgba(30, 30, 46, 0.9);
-        border-radius: 0 0 12px 12px;
-        padding: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-top: none;
     }
     
     /* Metric Cards */
@@ -254,12 +202,6 @@ if 'df_uploaded' not in st.session_state:
 
 if 'api_key_set' not in st.session_state:
     st.session_state.api_key_set = False
-
-if 'current_result' not in st.session_state:
-    st.session_state.current_result = None
-
-if 'current_code' not in st.session_state:
-    st.session_state.current_code = None
 
 # Sidebar for API key and settings
 with st.sidebar:
@@ -318,13 +260,13 @@ if st.session_state.api_key_set and st.session_state.df_uploaded:
     tab1, tab2 = st.tabs(["💬 Chat", "📊 Data"])
     
     with tab1:
-        # Display chat messages
+        # Display chat messages using Streamlit's native chat components
         for message in st.session_state.chat_history:
             with st.chat_message(message["role"]):
                 if message["role"] == "user":
                     st.markdown(message["content"])
                 else:
-                    # Display bot response
+                    # Display bot response - code and result together
                     if "code" in message:
                         st.markdown("**Generated Code:**")
                         st.code(message["code"], language="python")
@@ -332,18 +274,24 @@ if st.session_state.api_key_set and st.session_state.df_uploaded:
                         st.markdown("**Result:**")
                         result = message["result"]
                         if isinstance(result, (pd.Series, pd.DataFrame)):
-                            st.dataframe(result, width='stretch')
+                            try:
+                                st.dataframe(result)
+                            except:
+                                st.write(result.to_dict() if isinstance(result, pd.Series) else result)
                         else:
                             st.markdown(f"### {result}")
+                    if "chart_data" in message:
+                        st.markdown("**Visualization:**")
+                        st.bar_chart(message["chart_data"])
         
-        # Chat input
-        if question := st.chat_input("💭 Ask anything about your data..."):
-            # Add user message
-            st.session_state.chat_history.append({"role": "user", "content": question})
+        # Chat input at the bottom
+        if prompt := st.chat_input("💭 Ask anything about your data..."):
+            # Add user message to history
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
             
             # Create prompt for Groq
             df = st.session_state.df
-            prompt = f"""
+            groq_prompt = f"""
 You are an expert Python data analyst.
 
 A pandas dataframe named df already exists.
@@ -374,14 +322,14 @@ df.groupby('city')['revenue'].sum().idxmax()
 
 Now answer:
 
-Question: {question}
+Question: {prompt}
 """
             
             with st.spinner("🤔 Analyzing your data..."):
                 try:
                     completion = client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
-                        messages=[{"role": "user", "content": prompt}],
+                        messages=[{"role": "user", "content": groq_prompt}],
                         temperature=0
                     )
                     
@@ -397,13 +345,15 @@ Question: {question}
                     # Execute generated code
                     result = eval(code, {"df": df, "pd": pd})
                     
-                    # Store current result
-                    st.session_state.current_result = result
-                    st.session_state.current_code = code
+                    # Prepare response data
+                    response_data = {"role": "assistant", "code": code, "result": result}
+                    
+                    # Add chart data if result is DataFrame/Series
+                    if isinstance(result, (pd.Series, pd.DataFrame)):
+                        response_data["chart_data"] = result
                     
                     # Add assistant response to history
-                    response = {"role": "assistant", "code": code, "result": result}
-                    st.session_state.chat_history.append(response)
+                    st.session_state.chat_history.append(response_data)
                     
                 except Exception as e:
                     error_msg = f"❌ Error: {str(e)}"
@@ -411,33 +361,6 @@ Question: {question}
             
             # Rerun to display new messages
             st.rerun()
-        
-        # Show current result with visualization if available
-        if st.session_state.current_result is not None:
-            st.markdown("---")
-            st.markdown('<div class="section-header">📈 Analysis Result</div>', unsafe_allow_html=True)
-            
-            result = st.session_state.current_result
-            code = st.session_state.current_code
-            
-            with st.container():
-                st.markdown('<div class="result-container">', unsafe_allow_html=True)
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    st.markdown("**Generated Code:**")
-                    st.code(code, language="python")
-                with col2:
-                    st.markdown("**Output:**")
-                    if isinstance(result, (pd.Series, pd.DataFrame)):
-                        st.dataframe(result, width='stretch')
-                    else:
-                        st.markdown(f"## {result}")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Show chart for DataFrame/Series results
-            if isinstance(result, (pd.Series, pd.DataFrame)):
-                st.markdown('<div class="section-header">📊 Visualization</div>', unsafe_allow_html=True)
-                st.bar_chart(result)
     
     with tab2:
         df = st.session_state.df
@@ -456,22 +379,28 @@ Question: {question}
         
         # Data preview
         st.markdown("### First 10 Rows")
-        st.dataframe(df.head(10), width='stretch')
+        try:
+            st.dataframe(df.head(10))
+        except:
+            st.write(df.head(10))
         
         # Column info
         st.markdown("### Column Information")
         col_info = pd.DataFrame({
             'Column': df.columns,
-            'Type': df.dtypes.values,
+            'Type': [str(dtype) for dtype in df.dtypes.values],
             'Non-Null': df.notna().sum().values,
             'Null': df.isna().sum().values
         })
-        st.dataframe(col_info, width='stretch')
+        try:
+            st.dataframe(col_info)
+        except:
+            st.write(col_info)
 
 elif not st.session_state.api_key_set:
-    st.markdown("""
-    <div class="chat-container">
-        <div class="bot-message">
+    welcome_msg = """
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%); color: #e0e0e0; padding: 20px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);">
             👋 Welcome to <b>SheetTalk</b>!<br><br>
             I'm your AI-powered data analyst. To get started:<br>
             1. Enter your Groq API key in the sidebar<br>
@@ -480,11 +409,12 @@ elif not st.session_state.api_key_set:
             💡 Get your free API key at <a href="https://console.groq.com/" target="_blank">console.groq.com</a>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(welcome_msg, unsafe_allow_html=True)
     
     # Show features
     st.markdown("---")
-    st.markdown("""
+    features_html = """
     <div style="display: flex; justify-content: space-around; text-align: center; color: #a0a0a0;">
         <div>
             <div style="font-size: 2rem;">📊</div>
@@ -503,24 +433,28 @@ elif not st.session_state.api_key_set:
             <div>Visualize</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(features_html, unsafe_allow_html=True)
 
 elif not st.session_state.df_uploaded:
-    st.markdown("""
-    <div class="chat-container">
-        <div class="bot-message">
+    upload_msg = """
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%); color: #e0e0e0; padding: 20px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);">
             👋 API Key connected! Now please upload a CSV file to continue.<br><br>
             💡 You can use the file uploader in the sidebar to upload your data.
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.markdown(upload_msg, unsafe_allow_html=True)
 
 # Footer with copyright
 st.markdown("---")
-st.markdown(f"""
+year = pd.Timestamp.now().year
+footer_html = f"""
 <div class="footer">
-    © {pd.Timestamp.now().year} SheetTalk. All rights reserved.<br>
+    © {year} SheetTalk. All rights reserved.<br>
     Made with ❤️ for data enthusiasts | Powered by <span>Dhokla</span>
 </div>
-""", unsafe_allow_html=True)
+"""
+st.markdown(footer_html, unsafe_allow_html=True)
 
